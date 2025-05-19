@@ -1,6 +1,7 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import random
+import time
 
 root = tk.Tk()
 root.title("2048")
@@ -9,6 +10,8 @@ grid_size = 4
 board = [[0]*4 for _ in range(4)]
 score = 0
 high_score = 0
+move_history = []
+auto_playing = False
 
 # Game UI
 score_frame = tk.Frame(root)
@@ -23,17 +26,37 @@ high_score_label.pack(side='left', padx=10)
 canvas = tk.Canvas(root, width=300, height=300, bg='#bbada0')
 canvas.pack()
 
+button_frame = tk.Frame(root)
+button_frame.pack(pady=10)
+
 def start_game():
-    global board, score
+    global board, score, move_history
     board = [[0]*4 for _ in range(4)]
     score = 0
+    move_history = []
     update_score()
     add_new_tile()
     add_new_tile()
     draw_board()
 
-restart_button = tk.Button(root, text="Restart", command=start_game)
-restart_button.pack(pady=10)
+def undo_move():
+    global board, score, move_history
+    if move_history:
+        board, score = move_history.pop()
+        update_score()
+        draw_board()
+
+restart_button = tk.Button(button_frame, text="Restart", command=start_game)
+restart_button.pack(side='left', padx=5)
+
+undo_button = tk.Button(button_frame, text="Undo", command=undo_move)
+undo_button.pack(side='left', padx=5)
+
+auto_play_button = tk.Button(button_frame, text="Auto Play", command=lambda: auto_play(True))
+auto_play_button.pack(side='left', padx=5)
+
+stop_button = tk.Button(button_frame, text="Stop", command=lambda: auto_play(False), state=tk.DISABLED)
+stop_button.pack(side='left', padx=5)
 
 def draw_board():
     canvas.delete('all')
@@ -45,13 +68,32 @@ def draw_board():
             y2 = y1 + 70
             
             value = board[row][col]
-            color = '#5C4033' if value else '#cdc1b4'
+            color = get_tile_color(value)
             
             canvas.create_rectangle(x1, y1, x2, y2, fill=color)
             if value:
+                text_color = '#776e65' if value < 8 else '#f9f6f2'
                 canvas.create_text((x1+x2)/2, (y1+y2)/2, 
                                 text=str(value), 
-                                font=('Arial', 20, 'bold'))
+                                font=('Arial', 20, 'bold'),
+                                fill=text_color)
+
+def get_tile_color(value):
+    colors = {
+        0: '#cdc1b4',
+        2: '#eee4da',
+        4: '#ede0c8',
+        8: '#f2b179',
+        16: '#f59563',
+        32: '#f67c5f',
+        64: '#f65e3b',
+        128: '#edcf72',
+        256: '#edcc61',
+        512: '#edc850',
+        1024: '#edc53f',
+        2048: '#edc22e'
+    }
+    return colors.get(value, '#3c3a32')
 
 def update_score():
     global high_score
@@ -66,8 +108,17 @@ def add_new_tile():
         r, c = random.choice(empty)
         board[r][c] = 2 if random.random() < 0.9 else 4
 
-def move(direction):
-    global score
+def move(direction, record_move=True):
+    global score, move_history, auto_playing
+    
+    if auto_playing and not record_move:
+        pass  # Allow computer moves without recording
+    elif auto_playing:
+        return False  # Don't allow manual moves during auto play
+    
+    if record_move:
+        move_history.append(([row[:] for row in board], score))
+    
     moved = False
     board_copy = [row[:] for row in board]
     
@@ -134,6 +185,9 @@ def move(direction):
         
         if is_game_over():
             messagebox.showinfo("Game Over", f"Game Over! Score: {score}")
+            return False
+        return True
+    return False
 
 def is_game_over():
     # Check for empty spaces
@@ -154,6 +208,52 @@ def is_game_over():
                 return False
     
     return True
+
+def auto_play(start):
+    global auto_playing
+    
+    if start:
+        auto_playing = True
+        auto_play_button.config(state=tk.DISABLED)
+        stop_button.config(state=tk.NORMAL)
+        computer_move()
+    else:
+        auto_playing = False
+        auto_play_button.config(state=tk.NORMAL)
+        stop_button.config(state=tk.DISABLED)
+
+def computer_move():
+    global board, score
+    
+    if not auto_playing or is_game_over():
+        auto_play(False)
+        if is_game_over():
+            messagebox.showinfo("Game Over", f"Game Over! Score: {score}")
+        return
+    
+    directions = ['left', 'up', 'right', 'down']
+    moved = False
+    
+    for direction in directions:
+        if move(direction, record_move=False):
+            moved = True
+            break
+    
+    if not moved:
+        for direction in directions:
+            board_backup = [row[:] for row in board]
+            score_backup = score
+            if move(direction, record_move=False):
+                moved = True
+                break
+            board = [row[:] for row in board_backup]
+            score = score_backup
+    
+    if moved:
+        root.after(100, computer_move)
+    else:
+        auto_play(False)
+        messagebox.showinfo("Game Over", f"Game Over! Score: {score}")
 
 # Key bindings
 root.bind('<Left>', lambda e: move('left'))
